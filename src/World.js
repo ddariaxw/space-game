@@ -1,9 +1,10 @@
 import { Asteroid } from './Asteroid.js';
 
 export class World {
-  constructor(width, height) {
+  constructor(width, height, images) {
     this.width = width;
     this.height = height;
+    this.images = images || {};
     this.entities = new Map();
 
     for (let i = 0; i < 5; i++) {
@@ -57,7 +58,7 @@ export class World {
 
   render(ctx, alpha) {
     for (const entity of this.entities.values()) {
-      entity.render(ctx, alpha);
+      entity.render(ctx, alpha, this.images);
     }
   }
 }

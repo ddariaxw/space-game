@@ -1,0 +1,13 @@
+{
+  "images": {
+    "ship": "/src/assets/hero.png",
+    "asteroid": "/src/assets/vite.svg",
+    "bullet": "/src/assets/vite.svg"
+  },
+  "audio": {},
+  "arena": {
+    "width": 1200,
+    "height": 800,
+    "maxAsteroids": 5
+  }
+}
