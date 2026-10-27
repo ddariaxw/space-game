@@ -49,7 +49,7 @@ async function initGame() {
   try {
     renderLoadingScreen(0);
 
-    const assets = await loadAll('/src/assets/manifest.json', {
+    const assets = await loadAll('/client/src/assets/manifest.json', {
       onProgress: (progress) => {
         renderLoadingScreen(progress);
       },
