@@ -3,6 +3,7 @@ import { Ship } from './Ship.js';
 import { createInput } from './input.js';
 import { createLoop } from './loop.js';
 import { loadAll } from './assets/loader.js';
+import { NetworkManager } from './network.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -76,6 +77,15 @@ function startSpaceGame(assets) {
 
   const input = createInput();
 
+  const net = new NetworkManager(`ws://${window.location.host}`);
+
+  net.onSnapshot = (snapshot) => {
+    if (player) {
+        player.x = snapshot.x;
+        player.y = snapshot.y;
+    }
+ };
+
   const hudSteps = document.getElementById('steps');
   const hudFrames = document.getElementById('frames');
   const hudFTime = document.getElementById('ftime');
@@ -83,6 +93,11 @@ function startSpaceGame(assets) {
   createLoop({
     update: (dt) => {
       world.step(dt, input);
+
+        net.sendInput({
+          thrust: input.thrust, 
+          turn: input.turn      
+       });
     },
     render: (alpha) => {
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
