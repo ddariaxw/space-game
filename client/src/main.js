@@ -79,12 +79,12 @@ function startSpaceGame(assets) {
 
   const net = new NetworkManager(`ws://${window.location.host}`);
 
+  net.ws.onopen = () => {
+    net.ws.send(JSON.stringify({ type: 'join', room: 'default', name: 'Player' }));
+  };
+
   net.onSnapshot = (snapshot) => {
-    if (player) {
-        player.x = snapshot.x;
-        player.y = snapshot.y;
-    }
- };
+  };
 
   const hudSteps = document.getElementById('steps');
   const hudFrames = document.getElementById('frames');
@@ -94,10 +94,10 @@ function startSpaceGame(assets) {
     update: (dt) => {
       world.step(dt, input);
 
-        net.sendInput({
-          thrust: input.thrust, 
-          turn: input.turn      
-       });
+      net.sendInput({
+        thrust: input.thrust, 
+        turn: input.turn      
+      });
     },
     render: (alpha) => {
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);

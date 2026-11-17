@@ -1,13 +1,12 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 import { config } from "./config.js";
 import { validateMessage } from "./protocol.js";
 import { RoomManager } from "./rooms.js";
 
 const roomManager = new RoomManager();
-
 const CLIENT_DIST = path.resolve(process.cwd());
 
 const MIME_TYPES = {
@@ -34,31 +33,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (url.pathname === "/api/rooms" && req.method === "POST") {
-        let body = "";
-        req.on("data", (chunk) => {
-            body += chunk;
-            if (body.length > 1024) {
-                req.destroy();
-            }
-        });
-        req.on("end", () => {
-            try {
-                const data = JSON.parse(body);
-                const roomId = data.roomId || `room-${Date.now()}`;
-                const room = roomManager.getOrCreateRoom(roomId);
-                res.writeHead(201, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ success: true, roomId: room.id }));
-            } catch (err) {
-                res.writeHead(400, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ error: "Invalid JSON body" }));
-            }
-        });
-        return;
-    }
-
     let filePath = path.join(CLIENT_DIST, url.pathname === "/" ? "index.html" : url.pathname);
-
     if (!filePath.startsWith(CLIENT_DIST)) {
         res.writeHead(403, { "Content-Type": "text/plain" });
         res.end("Forbidden");
@@ -69,7 +44,6 @@ const server = http.createServer(async (req, res) => {
         if (err || !stats.isFile()) {
             filePath = path.join(CLIENT_DIST, "index.html");
         }
-
         fs.readFile(filePath, (err, data) => {
             if (err) {
                 res.writeHead(500, { "Content-Type": "text/plain" });
@@ -77,8 +51,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             const ext = path.extname(filePath);
-            const contentType = MIME_TYPES[ext] || "application/octet-stream";
-            res.writeHead(200, { "Content-Type": contentType });
+            res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
             res.end(data);
         });
     });
@@ -96,6 +69,7 @@ wss.on("connection", (socket, req) => {
     let currentRoom = null;
     let currentPlayer = null;
     let isAlive = true;
+    let lastProcessedSeq = 0;
 
     const playerState = { x: 400, y: 300, angle: 0, thrust: false, turn: 0 };
 
@@ -110,29 +84,29 @@ wss.on("connection", (socket, req) => {
     }, 5000);
 
     socket.on("message", (rawMessage) => {
-
         if (rawMessage instanceof ArrayBuffer) {
             const view = new DataView(rawMessage);
-            const msgType = view.getUint8(0);
+            const version = view.getUint8(0);
+            const msgType = view.getUint8(1);
 
             if (msgType === 1) { 
-                playerState.thrust = view.getUint8(1) === 1;
-                playerState.turn = view.getInt8(2);
+                const seq = view.getUint32(2, true);
+                const thrust = view.getUint8(6) === 1;
+                const turn = view.getInt8(7);
 
-                if (playerState.thrust) {
-                    playerState.x += Math.cos(playerState.angle) * 3;
-                    playerState.y += Math.sin(playerState.angle) * 3;
-                }
+                lastProcessedSeq = seq;
+                playerState.thrust = thrust;
+                playerState.turn = turn;
+ 
                 playerState.angle += playerState.turn * 0.05;
-            }
-            return;
+            if (playerState.thrust) {
+                playerState.x += Math.cos(playerState.angle) * 4;
+                playerState.y += Math.sin(playerState.angle) * 4;
+         }
+    }
         }
 
-        let messageText = rawMessage;
-        if (rawMessage instanceof Buffer) {
-            messageText = rawMessage.toString();
-        }
-
+        let messageText = rawMessage instanceof Buffer ? rawMessage.toString() : rawMessage;
         let parsed;
         try {
             parsed = JSON.parse(messageText);
@@ -152,47 +126,48 @@ wss.on("connection", (socket, req) => {
         }
 
         const msg = validation.data;
-
         if (msg.type === "join") {
             clearTimeout(joinTimeout);
             currentRoom = roomManager.getOrCreateRoom(msg.room);
             currentPlayer = { name: msg.name };
-
             socket.player = currentPlayer;
             socket.room = currentRoom;
-
             currentRoom.addPlayer(socket, currentPlayer);
-        } else if (msg.type === "chat") {
-            if (!currentRoom) {
-                socket.close(4003, "Not in a room");
-                return;
-            }
-            if (socket.bufferedAmount > 65536) {
-                console.warn(`Slow client detected (${currentPlayer?.name}), dropping message.`);
-                return;
-            }
-            currentRoom.broadcast("chat", { name: currentPlayer.name, text: msg.text }, socket);
         }
     });
 
-    const snapshotInterval = setInterval(() => {
+    const TICK_RATE = 30;
+    const STEP_MS = 1000 / TICK_RATE;
+    let nextTick = performance.now() + STEP_MS;
+    let snapshotTimer = null;
+
+    const runServerTick = () => {
         if (socket.readyState === WebSocket.OPEN) {
-            const buf = new ArrayBuffer(21);
+            const buf = new ArrayBuffer(26);
             const view = new DataView(buf);
 
-            view.setUint8(0, 2);                         
-            view.setFloat64(1, performance.now(), true);  
-            view.setFloat32(9, playerState.x, true);      
-            view.setFloat32(13, playerState.y, true);     
-            view.setFloat32(17, playerState.angle, true); 
+            view.setUint8(0, 1);                                 
+            view.setUint8(1, 2);                                 
+            view.setFloat64(2, performance.now(), true);         
+            view.setUint32(10, lastProcessedSeq, true);          
+            view.setFloat32(14, playerState.x, true);            
+            view.setFloat32(18, playerState.y, true);            
+            view.setFloat32(22, playerState.angle, true);        
 
             socket.send(buf);
         }
-    }, 1000 / 30);
+
+        const now = performance.now();
+        const drift = nextTick - now;
+        nextTick += STEP_MS;
+        snapshotTimer = setTimeout(runServerTick, Math.max(0, STEP_MS + drift));
+    };
+
+    snapshotTimer = setTimeout(runServerTick, STEP_MS);
 
     socket.on("close", () => {
         clearTimeout(joinTimeout);
-        clearInterval(snapshotInterval);
+        clearTimeout(snapshotTimer);
         if (currentRoom) {
             currentRoom.removePlayer(socket);
         }
@@ -209,26 +184,6 @@ const interval = setInterval(() => {
     });
 }, 15000);
 
-wss.on("close", () => {
-    clearInterval(interval);
-});
-
 server.listen(config.PORT, config.HOST, () => {
     console.log(`Server is running at http://${config.HOST}:${config.PORT}`);
 });
-
-function gracefulShutdown(signal) {
-    console.log(`\nReceived ${signal}. Shutting down gracefully...`);
-
-    wss.clients.forEach((socket) => {
-        socket.close(1001, "Server shutting down");
-    });
-
-    server.close(() => {
-        console.log("HTTP server closed.");
-        process.exit(0);
-    });
-}
-
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
