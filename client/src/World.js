@@ -1,4 +1,5 @@
 import { Asteroid } from './Asteroid.js';
+import { Bot } from './Bot.js';
 
 export class World {
   constructor(width, height, images) {
@@ -6,14 +7,26 @@ export class World {
     this.height = height;
     this.images = images || {};
     this.entities = new Map();
+    this.nextEntityId = 1;
 
     for (let i = 0; i < 5; i++) {
-      this.add(new Asteroid(Math.random() * width, Math.random() * height));
+      const asteroid = new Asteroid(Math.random() * width, Math.random() * height);
+      this.add(asteroid);
+    }
+
+    // Додаємо ботів
+    for (let i = 0; i < 2; i++) {
+      const bot = new Bot(200 + Math.random() * 400, 200 + Math.random() * 200);
+      this.add(bot);
     }
   }
 
   add(entity) {
+    if (!entity.id) {
+      entity.id = this.nextEntityId++;
+    }
     this.entities.set(entity.id, entity);
+    return entity.id;
   }
 
   step(dt, input) {
@@ -24,6 +37,8 @@ export class World {
           const bullet = entity.fire();
           this.add(bullet);
         }
+      } else if (entity.isBot) {
+        entity.update(dt, this);
       } else if (entity.kind === 'asteroid') {
         entity.update(dt, this.width, this.height);
       } else {

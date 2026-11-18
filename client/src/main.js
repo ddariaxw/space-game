@@ -92,16 +92,22 @@ function startSpaceGame(assets) {
 
   createLoop({
     update: (dt) => {
+      performance.mark('sim:start');
       world.step(dt, input);
+      performance.mark('sim:end');
+      performance.measure('simulation', 'sim:start', 'sim:end');
 
       net.sendInput({
-        thrust: input.thrust, 
-        turn: input.turn      
+        thrust: input.thrust,
+        turn: input.turn
       });
     },
     render: (alpha) => {
+      performance.mark('render:start');
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
       world.render(ctx, alpha);
+      performance.mark('render:end');
+      performance.measure('rendering', 'render:start', 'render:end');
     },
     onFpsUpdate: (stats) => {
       hudSteps.innerText = `steps/s: ${stats.stepsPerSec}`;
