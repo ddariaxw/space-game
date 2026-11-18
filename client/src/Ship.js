@@ -30,7 +30,6 @@ export class Ship extends Entity {
       this.vel = this.vel.add(dir.scale(this.acceleration * dt));
     }
 
-    // Рух назад (S / стрілочка вниз) — тепер можна здавати назад і опускатися вниз!
     if (input.isDown('KeyS') || input.isDown('ArrowDown')) {
       const dir = Vector2.fromAngle(this.angle);
       this.vel = this.vel.sub(dir.scale(this.acceleration * dt * 0.5));
@@ -39,7 +38,6 @@ export class Ship extends Entity {
     this.vel = this.vel.scale(this.friction);
     super.update(dt);
 
-    // Жорсткі межі екрана (щоб корабель не вилітав за краї і не губився внизу)
     const margin = this.radius;
     if (this.pos.x < margin) { this.pos.x = margin; this.vel.x *= -0.5; }
     if (this.pos.x > worldWidth - margin) { this.pos.x = worldWidth - margin; this.vel.x *= -0.5; }
